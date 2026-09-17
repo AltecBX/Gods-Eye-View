@@ -1,4 +1,36 @@
 /* ── Responsive ───────────────────────────────── */
+/* The wordmark is a fixed-size element, so it steps down through these
+   widths to stay clear of the centered scene dock. Values are measured
+   against the dock's left edge, not guessed. Below 720px the narrow rules
+   further down take over, and below 520px the wordmark is hidden. */
+@media (max-width: 1400px) {
+  #title-bar h1 {
+    font-size: 22px;
+    letter-spacing: 6px;
+  }
+}
+
+@media (max-width: 1220px) {
+  #title-bar h1 {
+    font-size: 20px;
+    letter-spacing: 5px;
+  }
+}
+
+@media (max-width: 1130px) {
+  #title-bar h1 {
+    font-size: 18px;
+    letter-spacing: 4px;
+  }
+}
+
+@media (max-width: 1040px) {
+  #title-bar h1 {
+    font-size: 16px;
+    letter-spacing: 4px;
+  }
+}
+
 @media (max-width: 720px) {
   #pp-toggles {
     --pp-expanded-width: 176px;
