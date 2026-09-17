@@ -1,0 +1,79 @@
+name: Sync upstream
+
+# Keeps this fork current with bilawalsidhu/gods-eye-view.
+#
+# While main is an untouched mirror of upstream the job fast-forwards it
+# directly. Once main carries commits of its own a fast-forward is no longer
+# possible, so the job pushes upstream/main to a sync branch and opens a pull
+# request instead. Either way nothing on main is ever overwritten.
+#
+# Scheduled workflows only run from the default branch, and GitHub disables
+# the schedule after 60 days without repository activity. Run it by hand from
+# the Actions tab whenever that happens.
+
+on:
+  schedule:
+    - cron: '17 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Merge upstream main
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out this fork
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/bilawalsidhu/gods-eye-view.git
+          git fetch --tags upstream main
+
+      - name: Fast-forward main when it is still a clean mirror
+        id: ff
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          upstream_head="$(git rev-parse upstream/main)"
+          fork_head="$(git rev-parse origin/main)"
+          if [ "$upstream_head" = "$fork_head" ]; then
+            echo "main already matches upstream/main ($upstream_head)"
+            echo "result=current" >> "$GITHUB_OUTPUT"
+          elif git merge-base --is-ancestor "$fork_head" "$upstream_head"; then
+            git push origin "$upstream_head:refs/heads/main"
+            echo "fast-forwarded main to $upstream_head"
+            echo "result=updated" >> "$GITHUB_OUTPUT"
+          else
+            echo "main has diverged from upstream, a pull request is needed"
+            echo "result=diverged" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open a sync pull request when main has diverged
+        if: steps.ff.outputs.result == 'diverged'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch="sync/upstream-$(date -u +%Y-%m-%d)"
+          git push --force origin "upstream/main:refs/heads/$branch"
+          open_pr="$(gh pr list --head "$branch" --base main --state open --json number --jq '.[0].number // ""')"
+          if [ -n "$open_pr" ]; then
+            echo "pull request #$open_pr already open for $branch"
+            exit 0
+          fi
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "Sync upstream main ($(date -u +%Y-%m-%d))" \
+            --body "Merges the latest \`main\` from [bilawalsidhu/gods-eye-view](https://github.com/bilawalsidhu/gods-eye-view) into this fork. Opened automatically by the Sync upstream workflow."
