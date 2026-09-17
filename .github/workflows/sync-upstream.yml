@@ -2,10 +2,13 @@ name: Sync upstream
 
 # Keeps this fork current with bilawalsidhu/gods-eye-view.
 #
-# While main is an untouched mirror of upstream the job fast-forwards it
-# directly. Once main carries commits of its own a fast-forward is no longer
-# possible, so the job pushes upstream/main to a sync branch and opens a pull
-# request instead. Either way nothing on main is ever overwritten.
+# The target is this repository's own default branch, whatever it is called,
+# so the job works without renaming or creating branches by hand.
+#
+# While the default branch is an untouched mirror of upstream the job fast
+# forwards it directly. Once it carries commits of its own a fast forward is
+# no longer possible, so the job pushes upstream/main to a dated sync branch
+# and opens a pull request instead. The default branch is never overwritten.
 #
 # Scheduled workflows only run from the default branch, and GitHub disables
 # the schedule after 60 days without repository activity. Run it by hand from
@@ -29,6 +32,8 @@ jobs:
     name: Merge upstream main
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      TARGET_BRANCH: ${{ github.event.repository.default_branch }}
     steps:
       - name: Check out this fork
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -40,26 +45,27 @@ jobs:
           git remote add upstream https://github.com/bilawalsidhu/gods-eye-view.git
           git fetch --tags upstream main
 
-      - name: Fast-forward main when it is still a clean mirror
+      - name: Fast-forward the default branch when it is still a clean mirror
         id: ff
         run: |
           set -euo pipefail
-          git fetch origin main
+          echo "target branch: $TARGET_BRANCH"
+          git fetch origin "$TARGET_BRANCH"
           upstream_head="$(git rev-parse upstream/main)"
-          fork_head="$(git rev-parse origin/main)"
+          fork_head="$(git rev-parse "origin/$TARGET_BRANCH")"
           if [ "$upstream_head" = "$fork_head" ]; then
-            echo "main already matches upstream/main ($upstream_head)"
+            echo "$TARGET_BRANCH already matches upstream/main ($upstream_head)"
             echo "result=current" >> "$GITHUB_OUTPUT"
           elif git merge-base --is-ancestor "$fork_head" "$upstream_head"; then
-            git push origin "$upstream_head:refs/heads/main"
-            echo "fast-forwarded main to $upstream_head"
+            git push origin "$upstream_head:refs/heads/$TARGET_BRANCH"
+            echo "fast-forwarded $TARGET_BRANCH to $upstream_head"
             echo "result=updated" >> "$GITHUB_OUTPUT"
           else
-            echo "main has diverged from upstream, a pull request is needed"
+            echo "$TARGET_BRANCH has diverged from upstream, a pull request is needed"
             echo "result=diverged" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Open a sync pull request when main has diverged
+      - name: Open a sync pull request when the default branch has diverged
         if: steps.ff.outputs.result == 'diverged'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -67,13 +73,13 @@ jobs:
           set -euo pipefail
           branch="sync/upstream-$(date -u +%Y-%m-%d)"
           git push --force origin "upstream/main:refs/heads/$branch"
-          open_pr="$(gh pr list --head "$branch" --base main --state open --json number --jq '.[0].number // ""')"
+          open_pr="$(gh pr list --head "$branch" --base "$TARGET_BRANCH" --state open --json number --jq '.[0].number // ""')"
           if [ -n "$open_pr" ]; then
             echo "pull request #$open_pr already open for $branch"
             exit 0
           fi
           gh pr create \
-            --base main \
+            --base "$TARGET_BRANCH" \
             --head "$branch" \
             --title "Sync upstream main ($(date -u +%Y-%m-%d))" \
             --body "Merges the latest \`main\` from [bilawalsidhu/gods-eye-view](https://github.com/bilawalsidhu/gods-eye-view) into this fork. Opened automatically by the Sync upstream workflow."

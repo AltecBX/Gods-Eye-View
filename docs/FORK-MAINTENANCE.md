@@ -36,17 +36,19 @@ npm run doctor
 ## Updating this repository on GitHub
 
 `.github/workflows/sync-upstream.yml` runs daily at 07:17 UTC and on demand
-from the Actions tab.
+from the Actions tab. It targets this repository's own default branch,
+whatever it is called, so no branch has to be renamed or created by hand.
 
-While `main` is an untouched mirror of upstream, the job fast forwards it
-directly. Once `main` carries commits of its own, a fast forward is no longer
-possible, so the job pushes `upstream/main` to a `sync/upstream-<date>` branch
-and opens a pull request instead. Nothing on `main` is ever overwritten.
+While the default branch is an untouched mirror of upstream, the job fast
+forwards it directly. Once it carries commits of its own, a fast forward is no
+longer possible, so the job pushes `upstream/main` to a `sync/upstream-<date>`
+branch and opens a pull request instead. The default branch is never
+overwritten.
 
 Two things to know about GitHub scheduled workflows:
 
-1. They run only from the default branch, so this file has to be on `main` for
-   the schedule to fire.
+1. They run only from the default branch, so this file has to be on the
+   default branch for the schedule to fire.
 2. GitHub disables the schedule after 60 days with no repository activity. Run
    it manually from the Actions tab to re-enable it.
 
