@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Update this clone from the upstream God's Eye View repository.
+# Update this clone: first from this fork on GitHub, then from upstream.
 #
 #   ./scripts/sync-upstream.sh            merge upstream/main into the current branch
 #   ./scripts/sync-upstream.sh --check    report how far behind we are, change nothing
@@ -32,17 +32,41 @@ git fetch --tags "$UPSTREAM_REMOTE" "$UPSTREAM_BRANCH"
 
 branch="$(git rev-parse --abbrev-ref HEAD)"
 target="$UPSTREAM_REMOTE/$UPSTREAM_BRANCH"
+
+# The weekly routine merges upstream on GitHub first. Taking that merge
+# before touching upstream keeps this clone on the same history instead of
+# producing a second, divergent merge of the same commits.
+if [ "$check_only" -eq 0 ] && git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+  if [ -n "$(git status --porcelain)" ]; then
+    echo "Working tree is dirty. Commit or stash first, then re-run." >&2
+    exit 1
+  fi
+  echo "==> fast-forwarding $branch from origin"
+  lock_origin_before="$(git rev-parse "HEAD:package-lock.json")"
+  git pull --ff-only origin "$branch"
+  if [ "$lock_origin_before" != "$(git rev-parse "HEAD:package-lock.json")" ]; then
+    lockfile_moved_by_origin=1
+  fi
+fi
 behind="$(git rev-list --count "HEAD..$target")"
 ahead="$(git rev-list --count "$target..HEAD")"
 
 echo "==> $branch is $behind commit(s) behind and $ahead commit(s) ahead of $target"
 
 if [ "$behind" -eq 0 ]; then
-  echo "Already up to date. Nothing to merge."
+  echo "Already up to date with upstream."
+  if [ "${lockfile_moved_by_origin:-0}" -eq 1 ]; then
+    echo "==> package-lock.json changed, reinstalling locked dependencies"
+    npm ci
+  fi
+  if [ "$check_only" -eq 0 ]; then
+    echo "==> verifying setup"
+    npm run doctor
+  fi
   exit 0
 fi
 
-git --no-pager log --oneline --no-merges "HEAD..$target" | head -20
+git --no-pager log --oneline --no-merges -n 20 "HEAD..$target"
 if [ "$behind" -gt 20 ]; then
   echo "... and $((behind - 20)) more"
 fi
@@ -63,7 +87,7 @@ echo "==> merging $target into $branch"
 git merge --no-edit "$target"
 
 lock_after="$(git rev-parse "HEAD:package-lock.json")"
-if [ "$lock_before" != "$lock_after" ]; then
+if [ "$lock_before" != "$lock_after" ] || [ "${lockfile_moved_by_origin:-0}" -eq 1 ]; then
   echo "==> package-lock.json changed, reinstalling locked dependencies"
   npm ci
 else
